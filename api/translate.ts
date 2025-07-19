@@ -1,45 +1,45 @@
-// pages/api/translate.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from 'openai';
 
-const openai = new OpenAI({
+const config = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
+const openai = new OpenAIApi(config);
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { text } = req.body;
-
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({
-      error: "API Key is missing",
-      code: "NO_API_KEY",
-    });
-  }
-
-  if (!text || typeof text !== "string") {
-    return res.status(400).json({
-      error: "Invalid text",
-      code: "INVALID_TEXT",
-    });
-  }
-
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{
-        role: "user",
+    const { text } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'No text provided or invalid format' });
+    }
+
+    const messages: ChatCompletionRequestMessage[] = [
+      {
+        role: 'system',
+        content: 'You are an assistant that translates aviation NOTAMs into natural, accurate Korean.',
+      },
+      {
+        role: 'user',
         content: `Translate the following NOTAMs into Korean:\n\n${text}`,
-      }],
-      temperature: 0.3,
+      },
+    ];
+
+    const completion = await openai.createChatCompletion({
+      model: 'gpt-3.5-turbo',
+      temperature: 0.2,
+      messages,
     });
 
-    const output = completion.choices[0].message.content || "";
+    const translation = completion.data.choices[0]?.message?.content || '';
+    return res.status(200).json({ translation });
+  } catch (error: any) {
+    console.error('🔥 GPT API 요청 중 에러:', error);
 
-    return res.status(200).json({ translation: output });
-  } catch (err: any) {
     return res.status(500).json({
-      message: err.message,
-      code: err.code || "UNKNOWN",
-      full: err,
+      error: error.message || 'Unknown error',
+      code: error.code || null,
+      full: error,
     });
   }
 }
