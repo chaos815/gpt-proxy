@@ -1,71 +1,61 @@
-import express from 'express';
-import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
-import axios from 'axios';
+// pages/api/translate.ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { ChatCompletionMessageParam, OpenAI } from "openai";
 
-dotenv.config();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-const app = express();
-app.use(bodyParser.json());
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { text } = req.body;
 
-app.post('/gpt-proxy-green', async (req, res) => {
-  const text = req.body.text;
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
+  if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({
-      error: 'API_KEY_MISSING',
-      message: 'OpenAI API Key is not set in environment variables.',
+      error: "API Key is missing",
+      code: "NO_API_KEY",
     });
   }
 
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({
+      error: "Invalid text",
+      code: "INVALID_TEXT",
+    });
+  }
+
+  const messages: ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content: "Translate the following aviation NOTAM into natural Korean for a pilot.",
+    },
+    {
+      role: "user",
+      content: text,
+    },
+  ];
+
   try {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'user',
-            content: `Translate the following NOTAM to Korean in a clear and understandable format:\n\n${text}`,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    const chat = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages,
+    });
 
-    const translatedText = response.data.choices?.[0]?.message?.content ?? 'No translation result.';
-    res.json({ translation: translatedText });
+    const response = chat.choices?.[0]?.message?.content || "";
 
-  } catch (error: any) {
-    console.error('Translation Error:', error.message);
-    const status = error?.response?.status;
-    if (status === 401) {
+    if (!response) {
       return res.status(500).json({
-        error: 'API_KEY_INVALID',
-        message: 'Unauthorized - OpenAI API key may be incorrect or expired.',
-      });
-    } else if (status === 429) {
-      return res.status(500).json({
-        error: 'API_RATE_LIMIT',
-        message: 'Rate limit exceeded - Too many requests to OpenAI.',
+        error: "Empty response from OpenAI",
+        code: "EMPTY_RESPONSE",
+        raw: JSON.stringify(chat),
       });
     }
 
-    return res.status(500).json({
-      error: 'TRANSLATION_FAILED',
-      message: 'Unknown error occurred during translation.',
-      details: error.message,
+    res.status(200).json({ translation: response });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error?.message || "Unknown error",
+      code: "OPENAI_ERROR",
+      raw: JSON.stringify(error),
     });
   }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`GPT proxy server running on port ${PORT}`);
-});
+}
