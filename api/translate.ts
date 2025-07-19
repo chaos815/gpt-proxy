@@ -1,16 +1,10 @@
 // 경로: /api/translate.ts
-import { NextRequest, NextResponse } from 'next/server';
-
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(req: NextRequest) {
+export default async function handler(req: any, res: any) {
   try {
-    const { text } = await req.json();
+    const { text } = req.body;
 
     if (typeof text !== 'string') {
-      return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
+      return res.status(400).json({ error: 'Invalid input' });
     }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -38,13 +32,13 @@ export default async function handler(req: NextRequest) {
     const data = await response.json();
 
     if (data.error) {
-      return NextResponse.json({ error: data.error }, { status: 500 });
+      return res.status(500).json({ error: data.error });
     }
 
     const translation = data.choices?.[0]?.message?.content || 'Translation failed';
-    return NextResponse.json({ translation });
+    return res.status(200).json({ translation });
   } catch (error) {
     console.error('Translation error:', error);
-    return NextResponse.json({ error: 'Unexpected error' }, { status: 500 });
+    return res.status(500).json({ error: 'Unexpected error' });
   }
 }
