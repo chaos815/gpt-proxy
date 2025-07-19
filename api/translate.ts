@@ -18,15 +18,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!text || typeof text !== "string") {
     return res.status(400).json({
-      error: "Invalid text",
+      error: "Invalid text format",
       code: "INVALID_TEXT",
     });
   }
 
+  // ✅ 전처리: 컨트롤 문자 제거 및 공백 정리
+  const cleaned = text
+    .replace(/[^\x20-\x7E\n\r]/g, "") // 제어 문자 제거
+    .replace(/\n{3,}/g, "\n\n")       // 줄바꿈이 3줄 이상이면 2줄로 정리
+    .trim();
+
   const messages: ChatCompletionMessageParam[] = [
     {
       role: "user",
-      content: `Please translate the following aviation NOTAM text into Korean as clearly as possible:\n\n${text}`,
+      content: `Please translate the following NOTAM text into clear Korean:\n\n${cleaned}`,
     },
   ];
 
@@ -43,6 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       error: error.message || "Unknown error",
       code: error.code || "UNKNOWN",
       full: JSON.stringify(error, null, 2),
+      debugSentText: cleaned.slice(0, 1000), // 🔍 실제 전송된 일부 텍스트 디버깅
     });
   }
 }
