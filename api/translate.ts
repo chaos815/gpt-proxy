@@ -1,55 +1,60 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { Configuration, OpenAIApi } from 'openai';
+import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = 'edge';
 
-const openai = new OpenAIApi(configuration);
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  const text = req.body.text;
-
-  if (!text) {
-    console.log("❌ 오류: 입력 텍스트 없음");
-    return res.status(400).json({ error: 'Missing text in request body' });
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    console.log("❌ 오류: OPENAI_API_KEY 환경변수 없음");
-    return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
-  }
-
-  console.log("✅ 입력된 텍스트:", text);
-
+export async function POST(req: NextRequest) {
   try {
-    const completion = await openai.createChatCompletion({
+    const body = await req.json();
+    const text = body.text;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (!apiKey || apiKey.trim() === '') {
+      return NextResponse.json({
+        error: 'API KEY 없음',
+        detail: '환경 변수에 OPENAI_API_KEY가 없습니다.'
+      }, { status: 500 });
+    }
+
+    const openai = new OpenAI({ apiKey });
+
+    if (!text) {
+      return NextResponse.json({
+        error: '입력 텍스트 없음',
+        detail: '번역할 텍스트가 요청에 포함되지 않았습니다.'
+      }, { status: 400 });
+    }
+
+    const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
-          content: 'Translate the following NOTAM into readable Korean. Keep units (FT, M, NM) intact, and format the result clearly.',
+          content: '다음 항공 NOTAM 문장을 한국어로 정확하고 자연스럽게 번역해 주세요. 결과에는 원문을 반복하지 마세요.'
         },
         {
           role: 'user',
-          content: text,
-        },
+          content: text
+        }
       ],
-      temperature: 0.3,
+      temperature: 0.2
     });
 
-    const translation = completion.data.choices[0].message?.content || '';
+    const translated = completion.choices[0].message.content;
 
-    console.log("✅ 번역 결과:", translation);
+    return NextResponse.json({ translation: translated });
 
-    res.status(200).json({ translation });
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    const isAuthError = errorMessage.includes('401') || errorMessage.toLowerCase().includes('unauthorized');
 
-  } catch (error: any) {
-    console.error("❌ 번역 중 오류 발생:", error.message || error);
-    res.status(500).json({ error: 'Translation failed', details: error.message || error });
+    return NextResponse.json({
+      error: '번역 실패',
+      message: errorMessage,
+      hint: isAuthError
+        ? '❌ API Key가 유효하지 않거나 잘못된 형식입니다.'
+        : '❗️기타 에러가 발생했습니다. 로그 확인 필요.'
+    }, { status: 500 });
   }
 }
