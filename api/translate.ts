@@ -1,60 +1,71 @@
-import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import express from 'express';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+import axios from 'axios';
 
-export const runtime = 'edge';
+dotenv.config();
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const text = body.text;
+const app = express();
+app.use(bodyParser.json());
 
-    const apiKey = process.env.OPENAI_API_KEY;
+app.post('/gpt-proxy-green', async (req, res) => {
+  const text = req.body.text;
+  const apiKey = process.env.OPENAI_API_KEY;
 
-    if (!apiKey || apiKey.trim() === '') {
-      return NextResponse.json({
-        error: 'API KEY 없음',
-        detail: '환경 변수에 OPENAI_API_KEY가 없습니다.'
-      }, { status: 500 });
-    }
-
-    const openai = new OpenAI({ apiKey });
-
-    if (!text) {
-      return NextResponse.json({
-        error: '입력 텍스트 없음',
-        detail: '번역할 텍스트가 요청에 포함되지 않았습니다.'
-      }, { status: 400 });
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: '다음 항공 NOTAM 문장을 한국어로 정확하고 자연스럽게 번역해 주세요. 결과에는 원문을 반복하지 마세요.'
-        },
-        {
-          role: 'user',
-          content: text
-        }
-      ],
-      temperature: 0.2
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'API_KEY_MISSING',
+      message: 'OpenAI API Key is not set in environment variables.',
     });
-
-    const translated = completion.choices[0].message.content;
-
-    return NextResponse.json({ translation: translated });
-
-  } catch (err: any) {
-    const errorMessage = err?.message || String(err);
-    const isAuthError = errorMessage.includes('401') || errorMessage.toLowerCase().includes('unauthorized');
-
-    return NextResponse.json({
-      error: '번역 실패',
-      message: errorMessage,
-      hint: isAuthError
-        ? '❌ API Key가 유효하지 않거나 잘못된 형식입니다.'
-        : '❗️기타 에러가 발생했습니다. 로그 확인 필요.'
-    }, { status: 500 });
   }
-}
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'user',
+            content: `Translate the following NOTAM to Korean in a clear and understandable format:\n\n${text}`,
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const translatedText = response.data.choices?.[0]?.message?.content ?? 'No translation result.';
+    res.json({ translation: translatedText });
+
+  } catch (error: any) {
+    console.error('Translation Error:', error.message);
+    const status = error?.response?.status;
+    if (status === 401) {
+      return res.status(500).json({
+        error: 'API_KEY_INVALID',
+        message: 'Unauthorized - OpenAI API key may be incorrect or expired.',
+      });
+    } else if (status === 429) {
+      return res.status(500).json({
+        error: 'API_RATE_LIMIT',
+        message: 'Rate limit exceeded - Too many requests to OpenAI.',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'TRANSLATION_FAILED',
+      message: 'Unknown error occurred during translation.',
+      details: error.message,
+    });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`GPT proxy server running on port ${PORT}`);
+});
