@@ -1,45 +1,66 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from 'openai';
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import { config } from "dotenv";
+import { OpenAI } from "openai";
 
-const config = new Configuration({
+config();
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(config);
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+app.post("/api/translate", async (req, res) => {
+  const text = req.body.text;
+
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ error: "Invalid input text" });
+  }
+
   try {
-    const { text } = req.body;
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a professional aviation translator. Translate each NOTAM into natural Korean. Keep the format aligned with the original.",
+        },
+        {
+          role: "user",
+          content: text,
+        },
+      ],
+      temperature: 0.3,
+    });
 
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ error: 'No text provided or invalid format' });
+    const translated = completion.choices?.[0]?.message?.content;
+
+    if (!translated) {
+      return res.status(500).json({ error: "No translation returned from OpenAI" });
     }
 
-    const messages: ChatCompletionRequestMessage[] = [
-      {
-        role: 'system',
-        content: 'You are an assistant that translates aviation NOTAMs into natural, accurate Korean.',
-      },
-      {
-        role: 'user',
-        content: `Translate the following NOTAMs into Korean:\n\n${text}`,
-      },
-    ];
+    return res.json({ translation: translated });
+  } catch (err: any) {
+    console.error("🔴 OpenAI 요청 실패:", err);
 
-    const completion = await openai.createChatCompletion({
-      model: 'gpt-3.5-turbo',
-      temperature: 0.2,
-      messages,
-    });
-
-    const translation = completion.data.choices[0]?.message?.content || '';
-    return res.status(200).json({ translation });
-  } catch (error: any) {
-    console.error('🔥 GPT API 요청 중 에러:', error);
+    const errorMessage =
+      err?.message ||
+      err?.response?.data?.error?.message ||
+      "Unknown error from OpenAI";
 
     return res.status(500).json({
-      error: error.message || 'Unknown error',
-      code: error.code || null,
-      full: error,
+      error: "OpenAI API request failed",
+      detail: errorMessage,
     });
   }
-}
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ GPT Translate API is running on port ${PORT}`);
+});
