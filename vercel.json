@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/translate.ts": {
-      "runtime": "nodejs"
+      "runtime": "vercel-node@4.0.0"
     }
   }
 }
