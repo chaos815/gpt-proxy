@@ -1,63 +1,69 @@
-import express from "express";
-import dotenv from "dotenv";
-import { Configuration, OpenAIApi } from "openai";
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import 'dotenv/config';
+import { Configuration, OpenAIApi } from 'openai';
 
-dotenv.config();
 const app = express();
-app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(configuration);
 
-app.post("/api/translate", async (req, res) => {
-  const { text } = req.body;
+app.post('/api/translate', async (req, res) => {
+  const text: string = req.body.text || '';
+  console.log('✅ STEP 1: 요청 도착');
+  console.log('📦 입력 텍스트:', text);
 
-  if (!text || typeof text !== "string") {
-    return res.status(400).json({ error: "Invalid input", code: "INVALID_INPUT" });
+  if (!text.trim()) {
+    console.log('❌ 입력 없음');
+    return res.status(400).json({ error: 'No input text' });
   }
+
+  const messages = [
+    {
+      role: 'user',
+      content: `Translate the following aviation NOTAM to Korean in a readable format:\n\n${text}`,
+    },
+  ];
+
+  console.log('✅ STEP 2: messages 생성 완료');
+  console.log(JSON.stringify(messages, null, 2));
 
   try {
     const completion = await openai.createChatCompletion({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "You are an aviation expert who translates NOTAMs into natural Korean. Translate clearly.",
-        },
-        {
-          role: "user",
-          content: text,
-        },
-      ],
+      model: 'gpt-3.5-turbo',
+      messages,
       temperature: 0.3,
     });
 
-    const output = completion.data.choices?.[0]?.message?.content;
-    if (!output) {
-      return res.status(500).json({
-        error: "No content returned from GPT",
-        code: "EMPTY_RESPONSE",
-      });
+    console.log('✅ STEP 3: OpenAI 응답 도착');
+
+    const result = completion.data.choices?.[0]?.message?.content;
+
+    if (!result) {
+      console.log('❌ STEP 4: 응답 없음 또는 파싱 실패');
+      return res.status(500).json({ error: 'No translation content returned from OpenAI' });
     }
 
-    return res.json({ translation: output });
+    console.log('✅ STEP 4: 번역 완료');
+    return res.json({ translated: result });
+
   } catch (err: any) {
+    console.error('❌ STEP 5: OpenAI 오류 발생');
     const errorMessage =
       err?.response?.data?.error?.message ||
       err?.message ||
-      "Unknown error from OpenAI";
-
-    return res.status(500).json({
-      error: "OpenAI API request failed",
-      detail: errorMessage,
-      code: "GPT_API_ERROR",
-    });
+      'Unknown OpenAI API error';
+    console.error(errorMessage);
+    return res.status(500).json({ error: 'OpenAI API request failed', detail: errorMessage });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ GPT Translate API running on port ${PORT}`);
+  console.log(`✅ GPT Translate API is running on port ${PORT}`);
 });
