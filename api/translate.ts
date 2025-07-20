@@ -1,69 +1,50 @@
-// translate.ts
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import { Configuration, OpenAIApi } from "openai";
+import express from 'express';
+import cors from 'cors';
+import { config } from 'dotenv';
+import OpenAI from 'openai';
 
-dotenv.config();
+config(); // .env 로부터 환경 변수 불러오기
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
-const openai = new OpenAIApi(configuration);
 
-app.post("/translate", async (req, res) => {
-  const text = req.body.text;
-  console.log("🚀 수신된 텍스트:", text);
+app.post('/api/translate', async (req, res) => {
+  const { text } = req.body;
 
-  if (!text || typeof text !== "string") {
-    return res.status(400).json({ error: "Invalid input text" });
+  if (!text) {
+    return res.status(400).json({ error: "Missing 'text' in request body" });
   }
 
   try {
-    const response = await openai.createChatCompletion({
-      model: "gpt-3.5-turbo",
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
       messages: [
         {
-          role: "system",
-          content: "Translate this NOTAM text to natural Korean.",
+          role: 'system',
+          content: 'Translate the following NOTAM into Korean. Keep it formal and aviation-style.'
         },
         {
-          role: "user",
-          content: text,
-        },
-      ],
-      temperature: 0.3,
+          role: 'user',
+          content: text
+        }
+      ]
     });
 
-    const translatedText = response.data.choices[0]?.message?.content;
+    const translated = completion.choices?.[0]?.message?.content || "(no response)";
+    res.json({ translation: translated });
 
-    if (!translatedText) {
-      return res.status(500).json({
-        error: "OpenAI 응답 오류: content 누락",
-        debug: response.data,
-      });
-    }
-
-    res.json({ translated: translatedText });
-  } catch (err: any) {
-    console.error("🔥 OpenAI 요청 실패:", err);
-
-    const errorMessage =
-      err?.response?.data?.error?.message ||
-      err?.message ||
-      "Unknown error from OpenAI";
-
+  } catch (err) {
+    console.error('[TRANSLATE ERROR]', err);
     res.status(500).json({
-      error: "OpenAI API 요청 실패",
-      detail: errorMessage,
+      error: 'Translation failed',
+      detail: err instanceof Error ? err.message : String(err)
     });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ GPT Translate API is running on port ${PORT}`);
-});
+export default app;
