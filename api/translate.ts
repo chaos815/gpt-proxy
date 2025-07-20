@@ -1,46 +1,40 @@
-import { OpenAI } from 'openai';
-import 'dotenv/config';
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Only POST allowed" }), {
+      status: 405
+    });
+  }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-export async function POST(request: Request): Promise<Response> {
   try {
-    const { text } = await request.json();
+    const { text } = await req.json();
 
-    if (!text || typeof text !== 'string') {
-      return new Response(JSON.stringify({ error: 'Invalid text input' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: 'Translate the following aviation NOTAM text into natural Korean.',
-        },
-        {
-          role: 'user',
-          content: text,
-        },
-      ],
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "Translate the following NOTAM into natural Korean." },
+          { role: "user", content: text }
+        ],
+        temperature: 0.3
+      })
     });
 
-    const result = completion.choices[0]?.message?.content || '';
+    const json = await openaiRes.json();
 
-    return new Response(
-      JSON.stringify({ translatedText: result }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
-  } catch (error) {
-    console.error('[SERVER ERROR]', error);
-    return new Response(
-      JSON.stringify({ error: 'Translation failed', details: String(error) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    if (!openaiRes.ok) {
+      return new Response(JSON.stringify({ error: json.error.message }), { status: 500 });
+    }
+
+    const translated = json.choices?.[0]?.message?.content ?? "";
+    return new Response(JSON.stringify({ result: translated }));
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || "Unknown error" }), {
+      status: 500
+    });
   }
 }
