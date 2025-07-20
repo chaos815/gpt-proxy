@@ -1,7 +1,5 @@
 import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import 'dotenv/config';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -39,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Translation Error:', error);
+    console.error('[SERVER ERROR]', error);
     return new Response(
       JSON.stringify({ error: 'Translation failed', details: String(error) }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
