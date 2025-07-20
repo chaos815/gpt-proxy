@@ -1,50 +1,48 @@
-import express from 'express';
-import cors from 'cors';
-import { config } from 'dotenv';
-import OpenAI from 'openai';
+import { OpenAI } from 'openai';
+import dotenv from 'dotenv';
 
-config(); // .env 로부터 환경 변수 불러오기
-
-const app = express();
-app.use(cors());
-app.use(express.json());
+dotenv.config();
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-app.post('/api/translate', async (req, res) => {
-  const { text } = req.body;
-
-  if (!text) {
-    return res.status(400).json({ error: "Missing 'text' in request body" });
-  }
-
+export async function POST(request: Request): Promise<Response> {
   try {
+    const { text } = await request.json();
+
+    if (!text || typeof text !== 'string') {
+      return new Response(JSON.stringify({ error: 'Invalid text input' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
-          content: 'Translate the following NOTAM into Korean. Keep it formal and aviation-style.'
+          content: 'Translate the following aviation NOTAM text into natural Korean.',
         },
         {
           role: 'user',
-          content: text
-        }
-      ]
+          content: text,
+        },
+      ],
     });
 
-    const translated = completion.choices?.[0]?.message?.content || "(no response)";
-    res.json({ translation: translated });
+    const result = completion.choices[0]?.message?.content || '';
 
-  } catch (err) {
-    console.error('[TRANSLATE ERROR]', err);
-    res.status(500).json({
-      error: 'Translation failed',
-      detail: err instanceof Error ? err.message : String(err)
-    });
+    return new Response(
+      JSON.stringify({ translatedText: result }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Translation Error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Translation failed', details: String(error) }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
-});
-
-export default app;
+}
