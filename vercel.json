@@ -1,8 +1,8 @@
 {
   "version": 2,
   "functions": {
-    "api/translate": {
-      "runtime": "nodejs20"
+    "api/translate.ts": {
+      "runtime": "vercel-nodejs@20.0.0"
     }
   }
 }
